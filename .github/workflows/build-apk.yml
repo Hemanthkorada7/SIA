@@ -38,7 +38,7 @@ jobs:
 
       - name: Run Expo Prebuild
         working-directory: SIA-Offline
-        run: npx expo prebuild --platform android --clean
+        run: npx expo prebuild --platform android --clean --no-install
 
       - name: Build Android Release Bundle
         working-directory: SIA-Offline/android
