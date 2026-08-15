@@ -210,6 +210,7 @@ export default function App() {
         await ExpoSpeechRecognitionModule.stop();
         setIsListening(false);
       } else {
+        Speech.stop(); // Clear audio channels before listening
         setInputContent('');
         const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
         if (!result.granted) {
