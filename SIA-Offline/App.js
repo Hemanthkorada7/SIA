@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView,
-  Modal, Linking, SafeAreaView, StatusBar, Keyboard, Animated,
-  ActivityIndicator, Switch
+  Modal, Linking, SafeAreaView, StatusBar, Keyboard, Animated
 } from 'react-native';
 import * as Speech from 'expo-speech';
-import Voice from '@react-native-voice/voice';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 
 // ---------------------------------------------------------
 // 🛠️ DEFAULT APP REGISTRY
@@ -78,27 +77,22 @@ export default function App() {
   // ---------------------------------------------------------
   useEffect(() => {
     loadLocalData();
-    setupVoiceListeners();
-    return () => {
-      Voice.destroy().then(Voice.removeAllListeners);
-    };
   }, []);
 
-  const setupVoiceListeners = () => {
-    Voice.onSpeechStart = () => setIsListening(true);
-    Voice.onSpeechEnd = () => setIsListening(false);
-    Voice.onSpeechError = (e) => {
-      setIsListening(false);
-      captureError('Voice Recognition', e.error?.message || 'Unknown mic error');
-    };
-    Voice.onSpeechResults = (e) => {
-      if (e.value && e.value[0]) {
-        const spokenText = e.value[0];
-        setInputContent(spokenText);
-        handleProcessText(spokenText);
-      }
-    };
-  };
+  // Modern Expo Speech Recognition Events
+  useSpeechRecognitionEvent("start", () => setIsListening(true));
+  useSpeechRecognitionEvent("end", () => setIsListening(false));
+  useSpeechRecognitionEvent("error", (event) => {
+    setIsListening(false);
+    captureError('Voice Recognition', event.error || 'Unknown mic error');
+  });
+  useSpeechRecognitionEvent("result", (event) => {
+    const text = event.results[0]?.transcript;
+    if (text) {
+      setInputContent(text);
+      handleProcessText(text);
+    }
+  });
 
   const loadLocalData = async () => {
     try {
@@ -116,7 +110,7 @@ export default function App() {
 
   const captureError = async (module, message) => {
     const newLog = { id: Date.now(), module, message, timestamp: new Date().toISOString() };
-    const updatedLogs = [newLog, ...errorLogs].slice(0, 50); // Keep last 50 logs
+    const updatedLogs = [newLog, ...errorLogs].slice(0, 50);
     setErrorLogs(updatedLogs);
     await AsyncStorage.setItem('@sia_logs', JSON.stringify(updatedLogs));
   };
@@ -129,12 +123,11 @@ export default function App() {
   };
 
   // ---------------------------------------------------------
-  // 🧠 LOCAL INTENT ENGINE (Ported from Python FastAPI)
+  // 🧠 LOCAL INTENT ENGINE
   // ---------------------------------------------------------
   const parseUserIntent = (text) => {
     const cleanText = text.trim().toLowerCase();
 
-    // 1. DIAL / CALL INTENT
     const callMatch = cleanText.match(/(?:call|dial|కాల్|ఫొన్)\s+([a-zA-Z0-9\s]+)/i);
     if (callMatch) {
       const target = callMatch[1].trim();
@@ -147,7 +140,6 @@ export default function App() {
       };
     }
 
-    // 2. APP OPEN / NAVIGATION INTENT
     const navMatch = cleanText.match(/(?:open|launch|go to|ఓపెన్|తెరు)\s+([a-zA-Z0-9\s]+)/i);
     if (navMatch) {
       const appName = navMatch[1].trim();
@@ -158,7 +150,6 @@ export default function App() {
       };
     }
 
-    // 3. QUICK NOTE INTENT
     const noteMatch = cleanText.match(/(?:note|remember|write down|remind|రాసుకో|గుర్తుపెట్టుకో)\s+(.+)/i);
     if (noteMatch) {
       return {
@@ -168,7 +159,6 @@ export default function App() {
       };
     }
 
-    // DEFAULT FALLBACK
     return {
       intent: 'SAVE_NOTE',
       saved_text: text,
@@ -184,7 +174,6 @@ export default function App() {
     setIsProcessing(true);
 
     try {
-      // Simulate slight processing delay for UX (since local processing is instant)
       await new Promise(resolve => setTimeout(resolve, 300));
       const data = parseUserIntent(text);
       setInputContent('');
@@ -218,11 +207,21 @@ export default function App() {
   const toggleMicrophone = async () => {
     try {
       if (isListening) {
-        await Voice.stop();
+        await ExpoSpeechRecognitionModule.stop();
         setIsListening(false);
       } else {
         setInputContent('');
-        await Voice.start('en-US'); // Will trigger onSpeechStart
+        const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (!result.granted) {
+          alert("Microphone permission not granted!");
+          return;
+        }
+        ExpoSpeechRecognitionModule.start({
+          lang: "en-US",
+          interimResults: true,
+          maxAlternatives: 1,
+          continuous: false,
+        });
       }
     } catch (error) {
       captureError('Microphone', 'Failed to toggle mic state. Check permissions.');
@@ -234,7 +233,7 @@ export default function App() {
     Speech.speak(text, {
       language: lang, pitch: 1.0, rate: 0.95,
       onDone: () => setIsSpeaking(false),
-      onError: (e) => {
+      onError: () => {
         setIsSpeaking(false);
         captureError('Speech Synthesis', 'TTS Failed');
       },
@@ -386,7 +385,6 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0B0F19" />
 
-      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.logoText}>S I A</Text>
         <View style={styles.navRow}>
@@ -402,12 +400,10 @@ export default function App() {
         </View>
       </View>
 
-      {/* DYNAMIC CONTENT */}
       {activeTab === 'HOME' && renderHome()}
       {activeTab === 'SETTINGS' && renderSettings()}
       {activeTab === 'LOGS' && renderLogs()}
 
-      {/* SECURITY OVERLAY MODAL */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.actionModal}>
@@ -431,9 +427,6 @@ export default function App() {
   );
 }
 
-// ---------------------------------------------------------
-// 💅 PREMIUM STYLESHEET (Dark / Glassmorphism Vibe)
-// ---------------------------------------------------------
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0B0F19', paddingHorizontal: 20 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, marginBottom: 25 },
