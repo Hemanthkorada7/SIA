@@ -40,6 +40,12 @@ jobs:
         working-directory: SIA-Offline
         run: npx expo prebuild --platform android --clean --no-install
 
-      - name: Build Android Release Bundle
+      - name: Build Android Release APK
         working-directory: SIA-Offline/android
-        run: ./gradlew bundleRelease
+        run: ./gradlew assembleRelease
+
+      - name: Upload Android Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Agent SIA
+          path: SIA-Offline/android/app/build/outputs/apk/release/app-release.apk
